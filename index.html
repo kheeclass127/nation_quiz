@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>중1 사회 - 세계 대륙과 국가 위치 학습기</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- D3.js & TopoJSON -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            touch-action: manipulation;
+        }
+
+        /* SVG Map Styling */
+        .country-path {
+            fill: #E2E8F0;
+            stroke: #94A3B8;
+            stroke-width: 0.6px;
+            transition: fill 0.2s ease, stroke-width 0.2s ease;
+            cursor: pointer;
+        }
+
+        .country-path:hover {
+            fill: #CBD5E1;
+            stroke: #475569;
+            stroke-width: 1px;
+        }
+
+        /* Target state styles */
+        .country-path.target-highlight {
+            fill: #3B82F6 !important;
+            animation: pulse-blue 1.5s infinite;
+        }
+
+        .country-path.correct-flash {
+            animation: flash-green 0.8s ease-in-out;
+        }
+
+        .country-path.wrong-flash {
+            animation: flash-red 0.8s ease-in-out;
+        }
+
+        .country-path.hint-flash {
+            fill: #F97316 !important;
+            animation: pulse-orange 1s infinite;
+        }
+
+        /* Keyframes */
+        @keyframes pulse-blue {
+            0% { fill: #3B82F6; }
+            50% { fill: #60A5FA; }
+            100% { fill: #3B82F6; }
+        }
+
+        @keyframes pulse-orange {
+            0% { fill: #F97316; }
+            50% { fill: #FDBA74; }
+            100% { fill: #F97316; }
+        }
+
+        @keyframes flash-green {
+            0%, 100% { fill: #E2E8F0; }
+            50% { fill: #22C55E; }
+        }
+
+        @keyframes flash-red {
+            0%, 100% { fill: #E2E8F0; }
+            50% { fill: #EF4444; }
+        }
+
+        /* Tooltip */
+        #tooltip {
+            position: absolute;
+            pointer-events: none;
+            transition: opacity 0.15s ease;
+            z-index: 50;
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen flex flex-col justify-between text-slate-800 antialiased selection:bg-indigo-500 selection:text-white">
+
+    <!-- Header / Top Bar -->
+    <header class="bg-indigo-700 text-white shadow-md sticky top-0 z-30">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center space-x-3">
+                <i class="fa-solid fa-earth-americas text-2xl text-amber-300"></i>
+                <div>
+                    <h1 class="font-bold text-lg leading-tight md:text-xl">중1 사회 · 세계 지도 위치 탐구</h1>
+                    <p class="text-xs text-indigo-200">주요 30개국 및 6대륙 위치 마스터하기</p>
+                </div>
+            </div>
+
+            <!-- Stats Badge & Control Buttons -->
+            <div class="flex items-center gap-2 sm:gap-3 text-sm font-semibold flex-wrap">
+                <div class="bg-indigo-800/80 px-3 py-1.5 rounded-lg border border-indigo-500/30 flex items-center gap-2">
+                    <i class="fa-solid fa-trophy text-amber-400"></i>
+                    <span>점수: <span id="score" class="text-amber-300 font-bold">0</span>점</span>
+                </div>
+                <div class="bg-indigo-800/80 px-3 py-1.5 rounded-lg border border-indigo-500/30 flex items-center gap-2">
+                    <i class="fa-solid fa-list-check text-cyan-300"></i>
+                    <span>진행: <span id="progress" class="text-cyan-300 font-bold">0/36</span></span>
+                </div>
+                <button id="stop-btn" title="중단하기" class="bg-rose-600 hover:bg-rose-500 text-white px-3 py-1.5 rounded-lg transition text-xs flex items-center gap-1 active:scale-95 shadow-sm">
+                    <i class="fa-solid fa-circle-stop"></i>
+                    <span>중단하기</span>
+                </button>
+                <button id="reset-btn" title="처음부터" class="bg-indigo-600 hover:bg-indigo-500 text-white p-2 rounded-lg transition text-xs flex items-center gap-1 active:scale-95">
+                    <i class="fa-solid fa-rotate-right"></i>
+                    <span class="hidden sm:inline">처음부터</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="max-w-7xl w-full mx-auto p-2 sm:p-4 flex-1 flex flex-col gap-4">
+
+        <!-- Question & Controls Area -->
+        <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 relative overflow-hidden">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                
+                <!-- Question Text -->
+                <div class="flex-1">
+                    <div class="inline-block bg-indigo-100 text-indigo-800 text-xs px-2.5 py-1 rounded-full font-bold mb-1">
+                        <span id="quiz-category">대륙/국가 탐구</span>
+                    </div>
+                    <h2 id="question-text" class="text-lg sm:text-xl font-bold text-slate-800 flex items-center gap-2">
+                        지도를 불러오는 중입니다...
+                    </h2>
+                    <p id="question-sub" class="text-xs sm:text-sm text-slate-500 mt-1">
+                        지도를 클릭하거나 아래 보기 중 알맞은 정답을 선택하세요.
+                    </p>
+                </div>
+
+                <!-- Mode Selector & Zoom Controls -->
+                <div class="flex items-center gap-2 self-end md:self-center">
+                    <div class="bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs flex">
+                        <button id="mode-map-click" class="px-3 py-1.5 rounded-md font-medium transition bg-white text-indigo-700 shadow-sm">
+                            <i class="fa-solid fa-hand-pointer mr-1"></i>지도 직접 클릭
+                        </button>
+                        <button id="mode-choice" class="px-3 py-1.5 rounded-md font-medium text-slate-600 transition hover:text-slate-900">
+                            <i class="fa-solid fa-list-ol mr-1"></i>4지선다형
+                        </button>
+                    </div>
+
+                    <div class="flex gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
+                        <button id="zoom-in" class="w-8 h-8 flex items-center justify-center rounded bg-white hover:bg-slate-50 text-slate-700 shadow-sm active:scale-95" title="확대">
+                            <i class="fa-solid fa-plus text-xs"></i>
+                        </button>
+                        <button id="zoom-out" class="w-8 h-8 flex items-center justify-center rounded bg-white hover:bg-slate-50 text-slate-700 shadow-sm active:scale-95" title="축소">
+                            <i class="fa-solid fa-minus text-xs"></i>
+                        </button>
+                        <button id="zoom-reset" class="w-8 h-8 flex items-center justify-center rounded bg-white hover:bg-slate-50 text-slate-700 shadow-sm active:scale-95" title="화면 맞춤">
+                            <i class="fa-solid fa-compress text-xs"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Multiple Choice Container (Hidden in Direct Click Mode) -->
+            <div id="choice-container" class="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 hidden border-t border-slate-100 pt-3">
+                <!-- Choice buttons populated dynamically -->
+            </div>
+        </section>
+
+        <!-- Map Workspace -->
+        <section class="bg-sky-50/50 rounded-xl shadow-inner border border-sky-100 flex-1 relative min-h-[380px] sm:min-h-[480px] flex items-center justify-center overflow-hidden">
+            <!-- Loading Indicator -->
+            <div id="map-loader" class="absolute inset-0 bg-white/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center gap-3">
+                <div class="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                <p class="text-sm font-semibold text-slate-600">세계 지도를 불러오는 중입니다...</p>
+            </div>
+
+            <!-- Interactive SVG Container -->
+            <div id="map-container" class="w-full h-full absolute inset-0 cursor-grab active:cursor-grabbing">
+                <svg id="world-map" class="w-full h-full block"></svg>
+            </div>
+
+            <!-- Floating Feedback Overlay -->
+            <div id="feedback-toast" class="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 opacity-0 pointer-events-none transition-all duration-300 transform translate-y-2">
+                <div id="feedback-content" class="px-5 py-2.5 rounded-full shadow-lg font-bold text-sm flex items-center gap-2">
+                    <i id="feedback-icon" class="fa-solid"></i>
+                    <span id="feedback-message">정답입니다!</span>
+                </div>
+            </div>
+
+            <!-- Map Legend / Helper -->
+            <div class="absolute top-3 left-3 bg-white/90 backdrop-blur-sm px-3 py-2 rounded-lg border border-slate-200/80 shadow-sm text-xs text-slate-600 space-y-1 pointer-events-none hidden sm:block">
+                <div class="flex items-center gap-2">
+                    <span class="w-3 h-3 rounded-full bg-slate-300 inline-block border border-slate-400"></span>
+                    <span>학습 영역</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="w-3 h-3 rounded-full bg-blue-500 inline-block animate-pulse"></span>
+                    <span>탐색 target</span>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-slate-200 py-3 text-center text-xs text-slate-500">
+        <p>Copyright©2026HEECLASS. all rights reserved.</p>
+    </footer>
+
+    <!-- Hover Tooltip -->
+    <div id="tooltip" class="opacity-0 bg-slate-900 text-white text-xs px-3 py-1.5 rounded-lg shadow-xl font-medium tracking-wide border border-slate-700">
+        <span id="tooltip-title" class="font-bold text-amber-300"></span>
+        <span id="tooltip-sub" class="text-slate-300 text-[10px] block"></span>
+    </div>
+
+    <!-- Game Complete / Evaluation Modal -->
+    <div id="complete-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 text-center transform transition-all scale-95">
+            <div id="modal-icon-container" class="w-16 h-16 bg-amber-100 text-amber-500 rounded-full flex items-center justify-center text-3xl mx-auto mb-4">
+                <i id="modal-icon" class="fa-solid fa-crown"></i>
+            </div>
+            <h3 id="modal-title" class="text-2xl font-bold text-slate-800 mb-1">학습 완료!</h3>
+            <p id="modal-desc" class="text-slate-600 text-sm mb-4">현재까지의 학습 결과 평가입니다.</p>
+
+            <div class="bg-slate-50 rounded-xl p-4 mb-4 grid grid-cols-3 gap-2 border border-slate-100 text-center">
+                <div>
+                    <span class="text-[11px] text-slate-400 font-medium block">시도 문제</span>
+                    <span id="modal-attempted" class="text-lg font-bold text-slate-700">0개</span>
+                </div>
+                <div>
+                    <span class="text-[11px] text-slate-400 font-medium block">최종 점수</span>
+                    <span id="modal-score" class="text-lg font-black text-indigo-600">0점</span>
+                </div>
+                <div>
+                    <span class="text-[11px] text-slate-400 font-medium block">정답률</span>
+                    <span id="modal-accuracy" class="text-lg font-black text-emerald-600">0%</span>
+                </div>
+            </div>
+
+            <!-- Grade & Feedback Message Box -->
+            <div id="modal-feedback-box" class="bg-indigo-50 border border-indigo-100 rounded-xl p-3 mb-6 text-left">
+                <div class="flex items-center gap-2 mb-1">
+                    <span class="text-xs font-bold text-indigo-800">학습 평가 Grade:</span>
+                    <span id="modal-grade" class="text-xs font-black px-2 py-0.5 rounded bg-indigo-600 text-white">S급</span>
+                </div>
+                <p id="modal-feedback-text" class="text-xs text-indigo-900 leading-relaxed">
+                    훌륭한 지리 감각입니다! 대부분의 위치를 완벽하게 파악하고 있습니다.
+                </p>
+            </div>
+
+            <button id="modal-restart-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-xl transition shadow-lg shadow-indigo-200 active:scale-95 flex items-center justify-center gap-2">
+                <i class="fa-solid fa-rotate-right"></i>
+                <span>다시 도전하기</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Logic Script -->
+    <script>
+        /**
+         * 30개 주요 국가 + 6대륙 학습 데이터 세트
+         * ISO Numeric 코드 및 한국어 명칭, 수도, 대륙 매핑
+         */
+        const targetData = [
+            // 6 대륙
+            { id: "CONT_ASIA", name: "아시아", type: "continent", countries: ["410", "392", "156", "356", "704", "360", "682", "496", "792"] },
+            { id: "CONT_EU", name: "유럽", type: "continent", countries: ["826", "250", "276", "380", "724", "300", "752", "643"] },
+            { id: "CONT_AF", name: "아프리카", type: "continent", countries: ["818", "566", "710", "404"] },
+            { id: "CONT_NA", name: "북아메리카", type: "continent", countries: ["840", "124", "484"] },
+            { id: "CONT_SA", name: "남아메리카", type: "continent", countries: ["076", "032", "152", "604"] },
+            { id: "CONT_OC", name: "오세아니아", type: "continent", countries: ["036", "554"] },
+
+            // 30개 국가 (ISO 3166-1 numeric 3자릿수 규격)
+            { id: "410", name: "대한민국", capital: "서울", continent: "아시아", type: "country" },
+            { id: "392", name: "일본", capital: "도쿄", continent: "아시아", type: "country" },
+            { id: "156", name: "중국", capital: "베이징", continent: "아시아", type: "country" },
+            { id: "356", name: "인도", capital: "뉴델리", continent: "아시아", type: "country" },
+            { id: "704", name: "베트남", capital: "하노이", continent: "아시아", type: "country" },
+            { id: "360", name: "인도네시아", capital: "자카르타", continent: "아시아", type: "country" },
+            { id: "682", name: "사우디아라비아", capital: "리야드", continent: "아시아", type: "country" },
+            { id: "496", name: "몽골", capital: "울란바토르", continent: "아시아", type: "country" },
+            { id: "792", name: "튀르키예", capital: "앙카라", continent: "아시아", type: "country" },
+
+            { id: "826", name: "영국", capital: "런던", continent: "유럽", type: "country" },
+            { id: "250", name: "프랑스", capital: "파리", continent: "유럽", type: "country" },
+            { id: "276", name: "독일", capital: "베를린", continent: "유럽", type: "country" },
+            { id: "380", name: "이탈리아", capital: "로마", continent: "유럽", type: "country" },
+            { id: "643", name: "러시아", capital: "모스크바", continent: "유럽/아시아", type: "country" },
+            { id: "724", name: "스페인", capital: "마드리드", continent: "유럽", type: "country" },
+            { id: "300", name: "그리스", capital: "아테네", continent: "유럽", type: "country" },
+            { id: "752", name: "스웨덴", capital: "스톡홀름", continent: "유럽", type: "country" },
+
+            { id: "818", name: "이집트", capital: "카이로", continent: "아프리카", type: "country" },
+            { id: "566", name: "나이지리아", capital: "아부자", continent: "아프리카", type: "country" },
+            { id: "710", name: "남아프리카공화국", capital: "프리토리아", continent: "아프리카", type: "country" },
+            { id: "404", name: "케냐", capital: "나이로비", continent: "아프리카", type: "country" },
+
+            { id: "840", name: "미국", capital: "워싱턴 D.C.", continent: "북아메리카", type: "country" },
+            { id: "124", name: "캐나다", capital: "오타와", continent: "북아메리카", type: "country" },
+            { id: "484", name: "멕시코", capital: "멕시코시티", continent: "북아메리카", type: "country" },
+
+            { id: "076", name: "브라질", capital: "브라질리아", continent: "남아메리카", type: "country" },
+            { id: "032", name: "아르헨티나", capital: "부엔노스아이레스", continent: "남아메리카", type: "country" },
+            { id: "152", name: "칠레", capital: "산티아고", continent: "남아메리카", type: "country" },
+            { id: "604", name: "페루", capital: "리마", continent: "남아메리카", type: "country" },
+
+            { id: "036", name: "호주", capital: "캔버라", continent: "오세아니아", type: "country" },
+            { id: "554", name: "뉴질랜드", capital: "웰링턴", continent: "오세아니아", type: "country" }
+        ];
+
+        // Quick Lookup Map
+        const targetMap = new Map();
+        targetData.forEach(item => targetMap.set(item.id, item));
+
+        // State variables
+        let quizQueue = [];
+        let currentQuestion = null;
+        let score = 0;
+        let questionIndex = 0;
+        let totalQuestions = 0;
+        let quizMode = 'click'; // 'click' or 'choice'
+        let attemptsCount = 0;
+        let correctCount = 0;
+        let isProcessing = false;
+
+        // D3 / Map Elements
+        let svg, g, projection, path, zoom;
+        let worldData = null;
+
+        // DOM Elements
+        const scoreEl = document.getElementById('score');
+        const progressEl = document.getElementById('progress');
+        const questionTextEl = document.getElementById('question-text');
+        const questionSubEl = document.getElementById('question-sub');
+        const quizCategoryEl = document.getElementById('quiz-category');
+        const choiceContainer = document.getElementById('choice-container');
+        const modeMapClickBtn = document.getElementById('mode-map-click');
+        const modeChoiceBtn = document.getElementById('mode-choice');
+        const tooltip = document.getElementById('tooltip');
+        const tooltipTitle = document.getElementById('tooltip-title');
+        const tooltipSub = document.getElementById('tooltip-sub');
+        const toast = document.getElementById('feedback-toast');
+        const toastContent = document.getElementById('feedback-content');
+        const toastIcon = document.getElementById('feedback-icon');
+        const toastMsg = document.getElementById('feedback-message');
+
+        // Initialization
+        window.addEventListener('DOMContentLoaded', () => {
+            initMap();
+            setupEventListeners();
+        });
+
+        // Initialize Map with D3.js and TopoJSON
+        function initMap() {
+            const container = document.getElementById('map-container');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+
+            svg = d3.select("#world-map")
+                .attr("viewBox", `0 0 ${width} ${height}`)
+                .attr("preserveAspectRatio", "xMidYMid meet");
+
+            // Projection & Path generator
+            projection = d3.geoMercator()
+                .scale(width / 6.5)
+                .translate([width / 2, height / 1.5]);
+
+            path = d3.geoPath().projection(projection);
+
+            // Zoom support
+            zoom = d3.zoom()
+                .scaleExtent([1, 8])
+                .on("zoom", (event) => {
+                    g.attr("transform", event.transform);
+                });
+
+            svg.call(zoom);
+
+            g = svg.append("g");
+
+            // Load World Atlas TopoJSON (110m low-res lightweight map)
+            fetch("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json")
+                .then(res => res.json())
+                .then(data => {
+                    worldData = data;
+                    renderMap();
+                    document.getElementById('map-loader').classList.add('hidden');
+                    startNewGame();
+                })
+                .catch(err => {
+                    console.error("Map Load Error:", err);
+                    document.getElementById('map-loader').innerHTML = `
+                        <p class="text-red-500 font-bold">지도 데이터를 불러오는 중 오류가 발생했습니다.</p>
+                        <button onclick="location.reload()" class="mt-2 text-xs bg-slate-200 px-3 py-1 rounded">재시도</button>
+                    `;
+                });
+        }
+
+        // Render Geo Paths
+        function renderMap() {
+            const countries = topojson.feature(worldData, worldData.objects.countries).features;
+
+            g.selectAll("path")
+                .data(countries)
+                .enter()
+                .append("path")
+                .attr("d", path)
+                .attr("class", "country-path")
+                .attr("data-code", d => String(d.id).padStart(3, '0'))
+                .on("mouseover", handleMouseOver)
+                .on("mousemove", handleMouseMove)
+                .on("mouseout", handleMouseOut)
+                .on("click", handleCountryClick);
+        }
+
+        // Event Handling
+        function setupEventListeners() {
+            // Mode buttons
+            modeMapClickBtn.addEventListener('click', () => setMode('click'));
+            modeChoiceBtn.addEventListener('click', () => setMode('choice'));
+
+            // Zoom controls
+            document.getElementById('zoom-in').addEventListener('click', () => {
+                svg.transition().duration(300).call(zoom.scaleBy, 1.3);
+            });
+            document.getElementById('zoom-out').addEventListener('click', () => {
+                svg.transition().duration(300).call(zoom.scaleBy, 0.7);
+            });
+            document.getElementById('zoom-reset').addEventListener('click', () => {
+                svg.transition().duration(300).call(zoom.transform, d3.zoomIdentity);
+            });
+
+            // Stop / Resets
+            document.getElementById('stop-btn').addEventListener('click', stopGame);
+            document.getElementById('reset-btn').addEventListener('click', startNewGame);
+            document.getElementById('modal-restart-btn').addEventListener('click', () => {
+                document.getElementById('complete-modal').classList.add('hidden');
+                startNewGame();
+            });
+
+            // Window resize
+            window.addEventListener('resize', () => {
+                const container = document.getElementById('map-container');
+                if (container && svg) {
+                    const w = container.clientWidth;
+                    const h = container.clientHeight;
+                    svg.attr("viewBox", `0 0 ${w} ${h}`);
+                }
+            });
+        }
+
+        function setMode(mode) {
+            if (quizMode === mode) return;
+            quizMode = mode;
+
+            if (mode === 'click') {
+                modeMapClickBtn.className = "px-3 py-1.5 rounded-md font-medium transition bg-white text-indigo-700 shadow-sm";
+                modeChoiceBtn.className = "px-3 py-1.5 rounded-md font-medium text-slate-600 transition hover:text-slate-900";
+                choiceContainer.classList.add('hidden');
+            } else {
+                modeChoiceBtn.className = "px-3 py-1.5 rounded-md font-medium transition bg-white text-indigo-700 shadow-sm";
+                modeMapClickBtn.className = "px-3 py-1.5 rounded-md font-medium text-slate-600 transition hover:text-slate-900";
+                choiceContainer.classList.remove('hidden');
+            }
+            renderCurrentQuestion();
+        }
+
+        // Game Initialization
+        function startNewGame() {
+            clearHighlights();
+            isProcessing = false;
+            
+            // Shuffle queue from targetData
+            quizQueue = [...targetData].sort(() => Math.random() - 0.5);
+            totalQuestions = quizQueue.length;
+            questionIndex = 0;
+            score = 0;
+            attemptsCount = 0;
+            correctCount = 0;
+
+            updateStats();
+            nextQuestion();
+        }
+
+        function updateStats() {
+            scoreEl.textContent = score;
+            progressEl.textContent = `${questionIndex}/${totalQuestions}`;
+        }
+
+        // Question Management
+        function nextQuestion() {
+            clearHighlights();
+
+            if (quizQueue.length === 0) {
+                showEvaluationModal(true);
+                return;
+            }
+
+            currentQuestion = quizQueue.pop();
+            questionIndex++;
+            updateStats();
+            renderCurrentQuestion();
+        }
+
+        function renderCurrentQuestion() {
+            if (!currentQuestion) return;
+
+            clearHighlights();
+
+            if (currentQuestion.type === 'continent') {
+                quizCategoryEl.textContent = '대륙 위치 학습';
+                quizCategoryEl.className = "inline-block bg-amber-100 text-amber-800 text-xs px-2.5 py-1 rounded-full font-bold mb-1";
+            } else {
+                quizCategoryEl.textContent = '국가 위치 학습';
+                quizCategoryEl.className = "inline-block bg-indigo-100 text-indigo-800 text-xs px-2.5 py-1 rounded-full font-bold mb-1";
+            }
+
+            if (quizMode === 'click') {
+                questionTextEl.innerHTML = `다음 중 <span class="text-indigo-600 font-extrabold mx-1">'${currentQuestion.name}'</span>의 위치를 지도에서 클릭하세요.`;
+                questionSubEl.textContent = "지도를 확대하거나 이동하여 정확한 영역을 찾아 터치/클릭하세요.";
+            } else {
+                // Choice Mode: Highlight target on map first, then ask what it is
+                highlightTargetOnMap(currentQuestion);
+                questionTextEl.innerHTML = `지도에 <span class="text-blue-600 font-extrabold mx-1">파란색으로 표시된</span> 영역의 이름은 무엇일까요?`;
+                questionSubEl.textContent = "아래 보기 중 올바른 대륙 또는 국가 이름을 선택하세요.";
+                generateChoices();
+            }
+        }
+
+        // Choice Generator for 4-choice mode
+        function generateChoices() {
+            choiceContainer.innerHTML = '';
+
+            // Pick 3 random distractors
+            const distractors = targetData
+                .filter(item => item.id !== currentQuestion.id && item.type === currentQuestion.type)
+                .sort(() => Math.random() - 0.5)
+                .slice(0, 3);
+
+            const options = [currentQuestion, ...distractors].sort(() => Math.random() - 0.5);
+
+            options.forEach(option => {
+                const btn = document.createElement('button');
+                btn.className = "w-full py-2.5 px-4 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-lg font-bold text-slate-700 hover:text-indigo-700 text-sm transition text-left flex items-center justify-between active:scale-98 shadow-sm";
+                btn.innerHTML = `
+                    <span>${option.name}</span>
+                    <i class="fa-regular fa-circle-check text-slate-300 text-xs"></i>
+                `;
+                btn.addEventListener('click', () => evaluateChoice(option));
+                choiceContainer.appendChild(btn);
+            });
+        }
+
+        // Evaluation
+        function evaluateChoice(selected) {
+            if (isProcessing) return;
+
+            attemptsCount++;
+            if (selected.id === currentQuestion.id) {
+                correctCount++;
+                score += 10;
+                showToast(true, "정답입니다! +10점");
+                triggerSuccessFlash(currentQuestion);
+                isProcessing = true;
+                setTimeout(() => {
+                    isProcessing = false;
+                    nextQuestion();
+                }, 1200);
+            } else {
+                showToast(false, `오답입니다! 정답: ${currentQuestion.name}`);
+                triggerErrorFlash(currentQuestion);
+                isProcessing = true;
+                setTimeout(() => {
+                    isProcessing = false;
+                    nextQuestion();
+                }, 1800);
+            }
+            updateStats();
+        }
+
+        function handleCountryClick(event, d) {
+            if (quizMode !== 'click' || isProcessing) return;
+
+            const clickedCode = String(d.id).padStart(3, '0');
+            attemptsCount++;
+
+            let isCorrect = false;
+
+            if (currentQuestion.type === 'country') {
+                isCorrect = (clickedCode === currentQuestion.id);
+            } else if (currentQuestion.type === 'continent') {
+                isCorrect = currentQuestion.countries.includes(clickedCode);
+            }
+
+            if (isCorrect) {
+                correctCount++;
+                score += 10;
+                showToast(true, "정답입니다! +10점");
+                
+                // Highlight clicked element in green
+                d3.select(event.currentTarget)
+                    .classed('correct-flash', true);
+
+                isProcessing = true;
+                setTimeout(() => {
+                    d3.select(event.currentTarget).classed('correct-flash', false);
+                    isProcessing = false;
+                    nextQuestion();
+                }, 1200);
+            } else {
+                showToast(false, `아쉽네요! '${currentQuestion.name}'의 위치를 확인하세요.`);
+                
+                // Flash clicked wrong element red
+                d3.select(event.currentTarget).classed('wrong-flash', true);
+                
+                // Show hint for correct answer on map
+                highlightHintOnMap(currentQuestion);
+
+                isProcessing = true;
+                setTimeout(() => {
+                    d3.select(event.currentTarget).classed('wrong-flash', false);
+                    clearHighlights();
+                    isProcessing = false;
+                    nextQuestion();
+                }, 2000);
+            }
+
+            updateStats();
+        }
+
+        // Visual Effects
+        function highlightTargetOnMap(item) {
+            clearHighlights();
+            if (item.type === 'country') {
+                g.selectAll(`path[data-code="${item.id}"]`)
+                    .classed('target-highlight', true);
+            } else if (item.type === 'continent') {
+                item.countries.forEach(code => {
+                    g.selectAll(`path[data-code="${code}"]`)
+                        .classed('target-highlight', true);
+                });
+            }
+        }
+
+        function highlightHintOnMap(item) {
+            if (item.type === 'country') {
+                g.selectAll(`path[data-code="${item.id}"]`)
+                    .classed('hint-flash', true);
+            } else if (item.type === 'continent') {
+                item.countries.forEach(code => {
+                    g.selectAll(`path[data-code="${code}"]`)
+                        .classed('hint-flash', true);
+                });
+            }
+        }
+
+        function triggerSuccessFlash(item) {
+            if (item.type === 'country') {
+                g.selectAll(`path[data-code="${item.id}"]`).classed('correct-flash', true);
+            } else {
+                item.countries.forEach(code => {
+                    g.selectAll(`path[data-code="${code}"]`).classed('correct-flash', true);
+                });
+            }
+        }
+
+        function triggerErrorFlash(item) {
+            highlightHintOnMap(item);
+        }
+
+        function clearHighlights() {
+            g.selectAll('.country-path')
+                .classed('target-highlight', false)
+                .classed('correct-flash', false)
+                .classed('wrong-flash', false)
+                .classed('hint-flash', false);
+        }
+
+        // Tooltip Handling
+        function handleMouseOver(event, d) {
+            const code = String(d.id).padStart(3, '0');
+            const data = targetMap.get(code);
+
+            if (data) {
+                tooltipTitle.textContent = data.name;
+                tooltipSub.textContent = `수도: ${data.capital} (${data.continent})`;
+            } else {
+                tooltipTitle.textContent = "기타 국가/영토";
+                tooltipSub.textContent = "탐구 대상 국가 목록 외 영역";
+            }
+
+            tooltip.classList.remove('opacity-0');
+            tooltip.classList.add('opacity-100');
+        }
+
+        function handleMouseMove(event) {
+            tooltip.style.left = (event.pageX + 12) + 'px';
+            tooltip.style.top = (event.pageY - 28) + 'px';
+        }
+
+        function handleMouseOut() {
+            tooltip.classList.remove('opacity-100');
+            tooltip.classList.add('opacity-0');
+        }
+
+        // Toast Feedback
+        function showToast(isSuccess, message) {
+            toastMsg.textContent = message;
+
+            if (isSuccess) {
+                toastContent.className = "px-5 py-2.5 rounded-full shadow-lg font-bold text-sm flex items-center gap-2 bg-emerald-500 text-white";
+                toastIcon.className = "fa-solid fa-circle-check";
+            } else {
+                toastContent.className = "px-5 py-2.5 rounded-full shadow-lg font-bold text-sm flex items-center gap-2 bg-rose-500 text-white";
+                toastIcon.className = "fa-solid fa-circle-xmark";
+            }
+
+            toast.classList.remove('opacity-0', 'translate-y-2', 'pointer-events-none');
+            toast.classList.add('opacity-100', 'translate-y-0');
+
+            setTimeout(() => {
+                toast.classList.remove('opacity-100', 'translate-y-0');
+                toast.classList.add('opacity-0', 'translate-y-2', 'pointer-events-none');
+            }, 1500);
+        }
+
+        // Stop Game Trigger
+        function stopGame() {
+            if (attemptsCount === 0) {
+                showToast(false, "아직 시도한 문제가 없습니다.");
+                return;
+            }
+            showEvaluationModal(false);
+        }
+
+        // Evaluation Modal (Handles both natural completion and manual stop)
+        function showEvaluationModal(isCompleted = false) {
+            const accuracy = attemptsCount > 0 ? Math.round((correctCount / attemptsCount) * 100) : 0;
+            
+            document.getElementById('modal-attempted').textContent = `${attemptsCount}개`;
+            document.getElementById('modal-score').textContent = `${score}점`;
+            document.getElementById('modal-accuracy').textContent = `${accuracy}%`;
+
+            const iconContainer = document.getElementById('modal-icon-container');
+            const modalIcon = document.getElementById('modal-icon');
+            const titleEl = document.getElementById('modal-title');
+            const descEl = document.getElementById('modal-desc');
+            const gradeEl = document.getElementById('modal-grade');
+            const feedbackTextEl = document.getElementById('modal-feedback-text');
+
+            if (isCompleted) {
+                titleEl.textContent = "🎉 학습 완료!";
+                descEl.textContent = "축하합니다! 모든 탐구 문제를 완료했습니다.";
+                iconContainer.className = "w-16 h-16 bg-amber-100 text-amber-500 rounded-full flex items-center justify-center text-3xl mx-auto mb-4";
+                modalIcon.className = "fa-solid fa-crown";
+            } else {
+                titleEl.textContent = "🛑 학습 중단 평가";
+                descEl.textContent = "현재까지 진행된 학습 결과를 바탕으로 한 평가입니다.";
+                iconContainer.className = "w-16 h-16 bg-rose-100 text-rose-500 rounded-full flex items-center justify-center text-3xl mx-auto mb-4";
+                modalIcon.className = "fa-solid fa-flag-checkered";
+            }
+
+            // Grade Evaluation based on accuracy and attempted questions
+            if (accuracy >= 90 && attemptsCount >= 5) {
+                gradeEl.textContent = "S급 (세계지리 지킴이)";
+                gradeEl.className = "text-xs font-black px-2 py-0.5 rounded bg-emerald-600 text-white";
+                feedbackTextEl.textContent = "탁월한 지도 판독 능력입니다! 주요 대륙과 국가의 위치를 정확하게 식별하고 있습니다.";
+            } else if (accuracy >= 70) {
+                gradeEl.textContent = "A급 (우수 지도 탐험가)";
+                gradeEl.className = "text-xs font-black px-2 py-0.5 rounded bg-indigo-600 text-white";
+                feedbackTextEl.textContent = "훌륭합니다! 대부분의 대륙과 지리적 위치를 원활히 파악하고 있으며 조금만 연습하면 완벽해집니다.";
+            } else if (accuracy >= 50) {
+                gradeEl.textContent = "B급 (지리 입문자)";
+                gradeEl.className = "text-xs font-black px-2 py-0.5 rounded bg-amber-500 text-white";
+                feedbackTextEl.textContent = "기초적인 지리 위치를 잘 파악하고 있습니다. 혼동하기 쉬운 인접 국가 위치를 복습해 보세요!";
+            } else {
+                gradeEl.textContent = "C급 (탐구 필요)";
+                gradeEl.className = "text-xs font-black px-2 py-0.5 rounded bg-slate-500 text-white";
+                feedbackTextEl.textContent = "아직은 위치가 낯설 수 있습니다. 4지선다형 모드를 통해 힌트를 보며 위치 감각을 익혀보세요!";
+            }
+
+            document.getElementById('complete-modal').classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
